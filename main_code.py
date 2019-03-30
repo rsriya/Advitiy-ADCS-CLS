@@ -2,7 +2,7 @@
 
 import appr_actuator as act
 from constants_1U import *
-import controller as con
+#import controller as con
 import default_blocks as defblock
 import disturbance_1U as dist
 from dynamics import x_dot_BO
@@ -40,11 +40,11 @@ for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because 
 	#obtain index corresponding to the start of eclipse
 	l1 = m_light_output_temp[k,1]
 	l2 = m_light_output_temp[k+1,1]
-	if l1 ==0.5 and l2 == 0 and count == 0:	#start of first eclipse
+	if l1 ==1 and l2 == 0.5 and count == 0:	#start of first eclipse
 		init = k
 		count = 1
 		
-	elif l1==0.5 and l2==0 and count == 1:	#start of second eclipse
+	elif l1==0.5 and l2==1 and count == 1:	#end of first eclipse
 		end = k 
 		break
 
@@ -56,8 +56,9 @@ t0 = m_sgp_output_temp_i[init,0]
 tf = m_sgp_output_temp_i[end,0]	   #tf-t0 represents simulation time in seconds
 h = 0.1		                       #step size of integration in seconds  
 Nmodel = int((tf-t0)/MODEL_STEP)+1 #no. of time environment-cycle will run
+print(Nmodel)
 Ncontrol = int((tf-t0)/CONTROL_STEP)+1 #no. of time control-cycle will run
-
+print(Ncontrol)
 #extract init to end data from temp file
 m_sgp_output_i = m_sgp_output_temp_i[init:(init+Nmodel),:].copy()
 m_si_output_b = m_si_output_temp_b[init:(init+Nmodel),:].copy()
@@ -115,7 +116,7 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		# disturbance torque
 		if (distbool == 0):
 			#getting default disturbance torque (zero in our case)
-			Advitiy.setDisturbance_i(defblock.disturbance(Advitiy))
+			Advitiy.setDisturbance_b(defblock.disturbance(Advitiy))
 
 		if (distbool == 1):
 			#getting disturbance torque by disturbance model
@@ -123,18 +124,18 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 			dist.aeroTorqueb(Advitiy)
 			dist.solarTorqueb(Advitiy)
 			
-			torque_dist_gg[i*int(Ncontrol/Nmodel)+k,:] = Advitiy.getggDisturbance_b()
-			torque_dist_aero[i*int(Ncontrol/Nmodel)+k,:] = Advitiy.getaeroDisturbance_b()
-			torque_dist_solar[i*int(Ncontrol/Nmodel)+k,:] = Advitiy.getsolarDisturbance_b()
-			torque_dist_total[i*int(Ncontrol/Nmodel)+k,:] = torque_dist_gg[i*int(Ncontrol/Nmodel)+k,:] + torque_dist_aero[i*int(Ncontrol/Nmodel)+k,:] + torque_dist_solar[i*int(Ncontrol/Nmodel)+k,:]
-			Advitiy.setDisturbance_b(torque_dist_total[i*int(Ncontrol/Nmodel)+k,:].copy())
+			torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getggDisturbance_b()
+			torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getaeroDisturbance_b()
+			torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getsolarDisturbance_b()
+			torque_dist_total[i*int(Nmodel/Ncontrol)+k,:] = torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:]
+			Advitiy.setDisturbance_b(torque_dist_total[i*int(Nmodel/Ncontrol)+k,:].copy())
 			
 		#Use rk4 solver to calculate the state for next step
-		sol.rk4Quaternion(Advitiy,x_dot_BO,h)
+		sol.updateStateTimeRK4(Advitiy,x_dot_BO,h)
 		
 		#storing data in matrices
-		v_state[i*int(Ncontrol/Nmodel)+k+1,:] = Advitiy.getState()
-		euler[i*int(Ncontrol/Nmodel)+k+1,:] = qnv.quat2euler(Advitiy.getQ_BO())
+		v_state[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getState()
+		euler[i*int(Nmodel/Ncontrol)+k,:] = qnv.quat2euler(Advitiy.getQ_BO())
 
 	#sensor reading
 	if (sensbool == 0):
@@ -180,9 +181,9 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		#getting applied torque by actuator modelling (magnetic torque limitation is being considered)
 
 #save the data files
-os.chdir('Logs-Detumbling/')
-os.mkdir('trial')
-os.chdir('trial')
+os.chdir('Logs-Uncontrolled/')
+os.mkdir('identity-SSO-no-dist')
+os.chdir('identity-SSO-no-dist')
 np.savetxt('position.csv',m_sgp_output_i[init:end+1,1:4], delimiter=",")
 np.savetxt('velocity.csv',m_sgp_output_i[init:end+1,4:7], delimiter=",")
 np.savetxt('time.csv',m_sgp_output_i[init:end+1,0] - t0, delimiter=",")
@@ -193,11 +194,11 @@ np.savetxt('disturbance-gg.csv',torque_dist_gg, delimiter=",")
 np.savetxt('disturbance-solar.csv',torque_dist_solar, delimiter=",")
 np.savetxt('disturbance-aero.csv',torque_dist_aero, delimiter=",")
 
-time = m_sgp_output_i[init:end+1,0] - t0
+time = m_sgp_output_i[:,0] - t0
 state = v_state
 euler = euler
-pos = m_sgp_output_i[init:end+1,1:4]
-vel = m_sgp_output_i[init:end+1,4:7]
+pos = m_sgp_output_i[:,1:4]
+vel = m_sgp_output_i[:,4:7]
 dist = torque_dist_total
 
 plt.figure(1)
@@ -221,9 +222,9 @@ plt.plot(time,state[ : ,0],label='q1')
 plt.plot(time,state[ : ,1],label='q2')
 plt.plot(time,state[ : ,2],label='q3')
 plt.plot(time,state[ : ,3],label='q4')
-plt.title('qBOB')
+plt.title('qBO')
 plt.legend()
-plt.savefig('qBOB')
+plt.savefig('qBO')
 
 plt.figure(4)
 plt.plot(time,state[ : ,4],label='wBOB_x')
@@ -237,15 +238,14 @@ plt.figure(5)
 plt.plot(time,euler[:,0],label='roll')
 plt.plot(time,euler[:,1],label='pitch')
 plt.plot(time,euler[:,2],label='yaw')
-plt.ylim(-180,180)
 plt.title("euler_BO in degrees")
 plt.legend()
 plt.savefig('euler_BO')
 
 plt.figure(6)
-plt.plot(time,dist_b[:,0],label="t_x")
-plt.plot(time,dist_b[:,1],label="t_y")
-plt.plot(time,dist_b[:,2],label="t_z")
+plt.plot(time,torque_dist_total[:,0],label="t_x")
+plt.plot(time,torque_dist_total[:,1],label="t_y")
+plt.plot(time,torque_dist_total[:,2],label="t_z")
 plt.legend()
 plt.title('disturbance torque')
 plt.savefig('disturbance torque')
