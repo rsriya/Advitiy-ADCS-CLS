@@ -16,6 +16,7 @@ import sensor
 import solver as sol
 import matplotlib.pyplot as plt
 from test_cases import * 
+#from controller import omega_dot_controller
 
 #Read position, velocity, sun-vector, light-boolean, magnetic field (in nanoTeslas) in ECIF from data file
 
@@ -44,7 +45,7 @@ for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because 
 		init = k
 		count = 1
 		
-	elif l1==0.5 and l2==1 and count == 1:	#end of first eclipse
+	elif l1==1 and l2==0.5 and count == 1:	#start of second eclipse
 		end = k 
 		break
 
@@ -67,8 +68,9 @@ m_magnetic_field_i = m_magnetic_field_temp_i[(init-1):(init+Nmodel),:].copy()
 print (Nmodel ,'Simulation for ' ,MODEL_STEP*(Nmodel-1),'seconds')
 
 #initialize empty matrices which will be needed in this simulation
-v_state = np.zeros((Nmodel,7))
-euler = np.zeros((Nmodel,3))
+m_state = np.zeros((Nmodel,7))
+m_euler = np.zeros((Nmodel,3))
+m_w_BI_b = np.zeros((Nmodel,3))
 torque_dist_total = np.zeros((Nmodel,3))
 torque_dist_gg = np.zeros((Nmodel,3))
 torque_dist_aero = np.zeros((Nmodel,3))
@@ -79,11 +81,11 @@ torque_control = np.zeros((Nmodel,3))
 #initial state based on initial qBO and wBOB
 #perfectly aligned body frame and orbit frame (v_q0_BO is initial value defined in constants)
 #Body frame is not rotating wrt orbit frame (v_w0_BOB is initial value defined in constants)
-v_state[0,:] = np.hstack((v_q0_BO,v_w0_BOB))                         
-euler[0,:] = qnv.quat2euler(v_q0_BO)    #finding initial euler angles
+m_state[0,:] = np.hstack((v_q0_BO,v_w0_BOB))                         
+m_euler[0,:] = qnv.quat2euler(v_q0_BO)    #finding initial euler angles
 
 #Make satellite object
-Advitiy = satellite.Satellite(v_state[0,:],t0)   #t0 from line 42 of main_code
+Advitiy = satellite.Satellite(m_state[0,:],t0)   #t0 from line 42 of main_code
 
 #initializing the controlTorque and measured magnetic field of satellite object as they are called in for loop before they can be set
 Advitiy.setControl_b(np.array([0.,0.,0.]))		
@@ -134,8 +136,9 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		sol.updateStateTimeRK4(Advitiy,x_dot_BO,h)
 		
 		#storing data in matrices
-		v_state[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getState()
-		euler[i*int(Nmodel/Ncontrol)+k,:] = qnv.quat2euler(Advitiy.getQ_BO())
+		m_state[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getState()
+		m_euler[i*int(Nmodel/Ncontrol)+k,:] = qnv.quat2euler(Advitiy.getQ_BO())
+		m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]=fs.wBOb2wBIb(m_state[i*int(Nmodel/Ncontrol)+k,4:7],m_state[i*int(Nmodel/Ncontrol)+k,0:4],v_w_IO_o)
 
 	#sensor reading
 	if (sensbool == 0):
@@ -168,9 +171,12 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		#getting default control torque (zero in our case)
 		Advitiy.setControl_b(defblock.controller(Advitiy))
 	
-	#if (contcons == 1):
-		#getting control torque by detumbling controller
-	
+	if (contcons == 1):
+		#getting control torque by omega dot controller
+		v_w_BI_b_p=m_w_BI_b[i*int(Nmodel/Ncontrol)+k-1,:]
+		v_w_BI_b_c=m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]
+		Advitiy.setControl_b(v_w_BI_b_p-v_w_BI_b_c)
+
 	#torque applied
 	
 	if (actbool == 0):
@@ -181,22 +187,23 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		#getting applied torque by actuator modelling (magnetic torque limitation is being considered)
 
 #save the data files
-os.chdir('Logs-Uncontrolled/')
-os.mkdir('identity-SSO-no-dist')
-os.chdir('identity-SSO-no-dist')
+os.chdir('Logs-Detumbling/')
+os.mkdir('identity-PO-no-dist')
+os.chdir('identity-PO-no-dist')
 np.savetxt('position.csv',m_sgp_output_i[init:end+1,1:4], delimiter=",")
 np.savetxt('velocity.csv',m_sgp_output_i[init:end+1,4:7], delimiter=",")
 np.savetxt('time.csv',m_sgp_output_i[init:end+1,0] - t0, delimiter=",")
-np.savetxt('state.csv',v_state, delimiter=",")
-np.savetxt('euler.csv',euler, delimiter=",")
+np.savetxt('state.csv',m_state, delimiter=",")
+np.savetxt('w_BI_b.csv',m_w_BI_b, delimiter=",")
+np.savetxt('euler.csv',m_euler, delimiter=",")
 np.savetxt('disturbance-total.csv',torque_dist_total, delimiter=",")
 np.savetxt('disturbance-gg.csv',torque_dist_gg, delimiter=",")
 np.savetxt('disturbance-solar.csv',torque_dist_solar, delimiter=",")
 np.savetxt('disturbance-aero.csv',torque_dist_aero, delimiter=",")
 
 time = m_sgp_output_i[:,0] - t0
-state = v_state
-euler = euler
+state = m_state
+euler = m_euler
 pos = m_sgp_output_i[:,1:4]
 vel = m_sgp_output_i[:,4:7]
 dist = torque_dist_total
@@ -246,6 +253,14 @@ plt.figure(6)
 plt.plot(time,torque_dist_total[:,0],label="t_x")
 plt.plot(time,torque_dist_total[:,1],label="t_y")
 plt.plot(time,torque_dist_total[:,2],label="t_z")
+plt.legend()
+plt.title('disturbance torque')
+plt.savefig('disturbance torque')
+
+plt.figure(7)
+plt.plot(time,m_w_BI_b[:,0],label="t_x")
+plt.plot(time,m_w_BI_b[:,1],label="t_y")
+plt.plot(time,m_w_BI_b[:,2],label="t_z")
 plt.legend()
 plt.title('disturbance torque')
 plt.savefig('disturbance torque')
