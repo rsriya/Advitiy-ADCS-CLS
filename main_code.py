@@ -35,7 +35,7 @@ if (orbitbool==1):
 	m_magnetic_field_temp_i = np.genfromtxt('mag_output_i_SSO.csv',delimiter=",") 
 
 count = 0 # to count no. of transitions from light to eclipses
-init,end = 0,0
+init,end = 1,10
 
 for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because maximum index for an array is length-1 and l2 = aaray[k+1]
 	#obtain index corresponding to the start of eclipse
@@ -52,6 +52,7 @@ for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because 
 #define simulation parameters
 print (init)
 print (end)
+
 
 t0 = m_sgp_output_temp_i[init,0]
 tf = m_sgp_output_temp_i[end,0]	   #tf-t0 represents simulation time in seconds
@@ -95,10 +96,10 @@ print(Ncontrol)
 print(Nmodel)
 #-------------Main for loop---------------------
 for  i in range(0,Ncontrol):  #loop for control-cycle
-	
+
 	if math.fmod(i,int(Ncontrol/100)) == 0: #we are printing percentage of cycle completed to keep track of simulation
 		print (int(100*i/Ncontrol)) 
-
+	
 	for k in range (0,int(Nmodel/Ncontrol)):  #loop for environment-cycle
 		#Set satellite parameters
 		#state is set inside solver
@@ -172,10 +173,9 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 		Advitiy.setControl_b(defblock.controller(Advitiy))
 	
 	if (contcons == 1):
-		#getting control torque by omega dot controller
-		v_w_BI_b_p=m_w_BI_b[i*int(Nmodel/Ncontrol)+k-1,:]
-		v_w_BI_b_c=m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]
-		Advitiy.setControl_b(v_w_BI_b_p-v_w_BI_b_c)
+		#getting control torque by omega controller
+		torque_control[i*int(Nmodel/Ncontrol)+k,:] = -0.01*m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]
+		Advitiy.setControl_b(torque_control[i*int(Nmodel/Ncontrol)+k,:])
 
 	#torque applied
 	
@@ -188,8 +188,8 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 
 #save the data files
 os.chdir('Logs-Detumbling/')
-os.mkdir('identity-PO-no-dist')
-os.chdir('identity-PO-no-dist')
+os.mkdir('trial1')
+os.chdir('trial1')
 np.savetxt('position.csv',m_sgp_output_i[init:end+1,1:4], delimiter=",")
 np.savetxt('velocity.csv',m_sgp_output_i[init:end+1,4:7], delimiter=",")
 np.savetxt('time.csv',m_sgp_output_i[init:end+1,0] - t0, delimiter=",")
@@ -200,6 +200,7 @@ np.savetxt('disturbance-total.csv',torque_dist_total, delimiter=",")
 np.savetxt('disturbance-gg.csv',torque_dist_gg, delimiter=",")
 np.savetxt('disturbance-solar.csv',torque_dist_solar, delimiter=",")
 np.savetxt('disturbance-aero.csv',torque_dist_aero, delimiter=",")
+np.savetxt('control torque.csv',torque_control, delimiter=",")
 
 time = m_sgp_output_i[:,0] - t0
 state = m_state
@@ -257,10 +258,19 @@ plt.legend()
 plt.title('disturbance torque')
 plt.savefig('disturbance torque')
 
+
 plt.figure(7)
+plt.plot(time,torque_control[:,0],label="t_x")
+plt.plot(time,torque_control[:,1],label="t_y")
+plt.plot(time,torque_control[:,2],label="t_z")
+plt.legend()
+plt.title('control torque')
+plt.savefig('control torque')
+
+plt.figure(8)
 plt.plot(time,m_w_BI_b[:,0],label="t_x")
 plt.plot(time,m_w_BI_b[:,1],label="t_y")
 plt.plot(time,m_w_BI_b[:,2],label="t_z")
 plt.legend()
-plt.title('disturbance torque')
-plt.savefig('disturbance torque')
+plt.title('wBIB')
+plt.savefig('wBIB')
