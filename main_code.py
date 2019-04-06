@@ -16,7 +16,6 @@ import sensor
 import solver as sol
 import matplotlib.pyplot as plt
 from test_cases import * 
-#from controller import omega_dot_controller
 
 #Read position, velocity, sun-vector, light-boolean, magnetic field (in nanoTeslas) in ECIF from data file
 
@@ -35,8 +34,8 @@ if (orbitbool==1):
 	m_magnetic_field_temp_i = np.genfromtxt('mag_output_i_SSO.csv',delimiter=",") 
 
 count = 0 # to count no. of transitions from light to eclipses
-init,end = 1,10
-
+init,end = 1, 0
+'''
 for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because maximum index for an array is length-1 and l2 = aaray[k+1]
 	#obtain index corresponding to the start of eclipse
 	l1 = m_light_output_temp[k,1]
@@ -48,7 +47,8 @@ for k in range(0,len(m_light_output_temp)-2): #we go to k=length-2 only because 
 	elif l1==1 and l2==0.5 and count == 1:	#start of second eclipse
 		end = k 
 		break
-
+'''
+end = init + 10
 #define simulation parameters
 print (init)
 print (end)
@@ -87,60 +87,24 @@ m_euler[0,:] = qnv.quat2euler(v_q0_BO)    #finding initial euler angles
 
 #Make satellite object
 Advitiy = satellite.Satellite(m_state[0,:],t0)   #t0 from line 42 of main_code
+Advitiy.setPos(m_sgp_output_i[0,1:4])
+Advitiy.setVel(m_sgp_output_i[0,4:7])
+Advitiy.setLight(m_light_output[0,1])
+Advitiy.setTime(t0) #time at a cycle 
+Advitiy.setSun_i(m_si_output_b[0,1:4])
+Advitiy.setMag_i(m_magnetic_field_i[0,1:4])
+Advitiy.setMag_b_m_c(defblock.magnetometer(Advitiy))
 
-#initializing the controlTorque and measured magnetic field of satellite object as they are called in for loop before they can be set
-Advitiy.setControl_b(np.array([0.,0.,0.]))		
-Advitiy.setMag_b_m_c(m_magnetic_field_i[0,:]) 
-
+		
 print(Ncontrol)
 print(Nmodel)
+
 #-------------Main for loop---------------------
 for  i in range(0,Ncontrol):  #loop for control-cycle
-
+	'''
 	if math.fmod(i,int(Ncontrol/100)) == 0: #we are printing percentage of cycle completed to keep track of simulation
 		print (int(100*i/Ncontrol)) 
-	
-	for k in range (0,int(Nmodel/Ncontrol)):  #loop for environment-cycle
-		#Set satellite parameters
-		#state is set inside solver
-		Advitiy.setPos(m_sgp_output_i[i,1:4])
-		Advitiy.setVel(m_sgp_output_i[i,4:7])
-		Advitiy.setLight(m_light_output[i,1])
-		Advitiy.setTime(t0 + i*CONTROL_STEP + k*MODEL_STEP) #time at a cycle 
-
-		#control
-		Advitiy.setSun_i(m_si_output_b[i,1:4])
-		Advitiy.setMag_i(m_magnetic_field_i[i+1,1:4])
-		#Quest
-		#magMoment_required
-		#AppTorque_b
-		#gyrobias
-
-		# disturbance torque
-		if (distbool == 0):
-			#getting default disturbance torque (zero in our case)
-			Advitiy.setDisturbance_b(defblock.disturbance(Advitiy))
-
-		if (distbool == 1):
-			#getting disturbance torque by disturbance model
-			dist.ggTorqueb(Advitiy)
-			dist.aeroTorqueb(Advitiy)
-			dist.solarTorqueb(Advitiy)
-			
-			torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getggDisturbance_b()
-			torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getaeroDisturbance_b()
-			torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getsolarDisturbance_b()
-			torque_dist_total[i*int(Nmodel/Ncontrol)+k,:] = torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:]
-			Advitiy.setDisturbance_b(torque_dist_total[i*int(Nmodel/Ncontrol)+k,:].copy())
-			
-		#Use rk4 solver to calculate the state for next step
-		sol.updateStateTimeRK4(Advitiy,x_dot_BO,h)
-		
-		#storing data in matrices
-		m_state[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getState()
-		m_euler[i*int(Nmodel/Ncontrol)+k,:] = qnv.quat2euler(Advitiy.getQ_BO())
-		m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]=fs.wBOb2wBIb(m_state[i*int(Nmodel/Ncontrol)+k,4:7],m_state[i*int(Nmodel/Ncontrol)+k,0:4],v_w_IO_o)
-
+	'''
 	#sensor reading
 	if (sensbool == 0):
 		#getting default sensor reading (zero noise in our case)
@@ -174,8 +138,9 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 	
 	if (contcons == 1):
 		#getting control torque by omega controller
-		torque_control[i*int(Nmodel/Ncontrol)+k,:] = -0.01*m_w_BI_b[i*int(Nmodel/Ncontrol)+k,:]
-		Advitiy.setControl_b(torque_control[i*int(Nmodel/Ncontrol)+k,:])
+		torque_control[i*int(Nmodel/Ncontrol),:] = -0.0001*Advitiy.getW_BI_b()
+		print(Advitiy.getW_BI_b())
+		Advitiy.setControl_b(torque_control[i*int(Nmodel/Ncontrol),:])
 
 	#torque applied
 	
@@ -186,13 +151,50 @@ for  i in range(0,Ncontrol):  #loop for control-cycle
 	#if (actcons == 1):
 		#getting applied torque by actuator modelling (magnetic torque limitation is being considered)
 
+	for k in range (0,int(Nmodel/Ncontrol)):  #loop for environment-cycle
+		#Set satellite parameters
+		#state is set inside solver
+		Advitiy.setPos(m_sgp_output_i[i*int(Nmodel/Ncontrol)+k,1:4])
+		Advitiy.setVel(m_sgp_output_i[i*int(Nmodel/Ncontrol)+k,4:7])
+		Advitiy.setLight(m_light_output[i*int(Nmodel/Ncontrol)+k,1])
+		Advitiy.setTime(t0 + i*int(Nmodel/Ncontrol)+k) #time at a cycle 
+		Advitiy.setSun_i(m_si_output_b[i*int(Nmodel/Ncontrol)+k,1:4])
+		Advitiy.setMag_i(m_magnetic_field_i[(i+1)*int(Nmodel/Ncontrol)+k,1:4])
+		
+
+		# disturbance torque
+		if (distbool == 0):
+			#getting default disturbance torque (zero in our case)
+			Advitiy.setDisturbance_b(defblock.disturbance(Advitiy))
+
+		if (distbool == 1):
+			#getting disturbance torque by disturbance model
+			dist.ggTorqueb(Advitiy)
+			dist.aeroTorqueb(Advitiy)
+			dist.solarTorqueb(Advitiy)
+			
+			torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getggDisturbance_b()
+			torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getaeroDisturbance_b()
+			torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:] = Advitiy.getsolarDisturbance_b()
+			torque_dist_total[i*int(Nmodel/Ncontrol)+k,:] = torque_dist_gg[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_aero[i*int(Nmodel/Ncontrol)+k,:] + torque_dist_solar[i*int(Nmodel/Ncontrol)+k,:]
+			Advitiy.setDisturbance_b(torque_dist_total[i*int(Nmodel/Ncontrol)+k,:].copy())
+			
+		#Use rk4 solver to calculate the state for next step
+		sol.updateStateTimeRK4(Advitiy,x_dot_BO,h)
+		
+		#storing data in matrices
+		m_state[i*int(Nmodel/Ncontrol)+k+1,:] = Advitiy.getState()
+		m_euler[i*int(Nmodel/Ncontrol)+k+1,:] = qnv.quat2euler(Advitiy.getQ_BO())
+		print(Advitiy.getW_BI_b())
+		m_w_BI_b[i*int(Nmodel/Ncontrol)+k+1,:]= Advitiy.getW_BI_b()
+
 #save the data files
 os.chdir('Logs-Detumbling/')
 os.mkdir('trial1')
 os.chdir('trial1')
-np.savetxt('position.csv',m_sgp_output_i[init:end+1,1:4], delimiter=",")
-np.savetxt('velocity.csv',m_sgp_output_i[init:end+1,4:7], delimiter=",")
-np.savetxt('time.csv',m_sgp_output_i[init:end+1,0] - t0, delimiter=",")
+np.savetxt('position.csv',m_sgp_output_i[:,1:4], delimiter=",")
+np.savetxt('velocity.csv',m_sgp_output_i[:,4:7], delimiter=",")
+np.savetxt('time.csv',m_sgp_output_i[:,0] - t0, delimiter=",")
 np.savetxt('state.csv',m_state, delimiter=",")
 np.savetxt('w_BI_b.csv',m_w_BI_b, delimiter=",")
 np.savetxt('euler.csv',m_euler, delimiter=",")
